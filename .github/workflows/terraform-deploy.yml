@@ -81,7 +81,7 @@ jobs:
           TF_VAR_environment: ${{ secrets.TERRAFORM_ENV }}
 
       - name: Upload Plan
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: tfplan
           path: terraform/tfplan
