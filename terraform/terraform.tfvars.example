@@ -1,0 +1,15 @@
+# This is an example terraform.tfvars file
+# Copy this file to terraform.tfvars and update values for your environment
+# IMPORTANT: Add terraform.tfvars to .gitignore to prevent secrets from being committed
+
+# subscription_id = "your-subscription-id"
+# resource_group_name = "rg-myproject-dev"
+# location = "East US"
+# environment = "dev"
+# project_name = "myproject"
+
+# tags = {
+#   Managed     = "Terraform"
+#   CostCenter  = "Engineering"
+#   Owner       = "DevOps Team"
+# }
