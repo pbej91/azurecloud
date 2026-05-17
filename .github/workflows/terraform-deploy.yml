@@ -1,13 +1,8 @@
 name: Terraform Deploy to Azure
 
 on:
-  pull_request:
-    branches:
-      - main
-      - develop
-    paths:
-      - 'terraform/**'
-      - '.github/workflows/terraform-deploy.yml'
+  issue_comment:
+    types: [created, edited]
   push:
     branches:
       - main
@@ -28,8 +23,9 @@ permissions:
 
 jobs:
   parse-commit:
-    name: Parse Commit Message
+    name: Parse Terraform Target
     runs-on: ubuntu-latest
+    if: github.event_name == 'issue_comment' && github.event.action == 'created' && contains(github.event.comment.body, 'terraform:')
     outputs:
       subscription: ${{ steps.parse.outputs.subscription }}
       region: ${{ steps.parse.outputs.region }}
@@ -38,17 +34,15 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Parse Commit Message
+      - name: Parse Comment for Terraform Target
         id: parse
         run: |
-          COMMIT_MSG="${{ github.event.head_commit.message || github.event.pull_request.body }}"
-          echo "Commit message: $COMMIT_MSG"
+          COMMENT="${{ github.event.comment.body }}"
+          echo "Comment: $COMMENT"
 
-          # Parse terraform: (subscription):region format
-          if [[ $COMMIT_MSG =~ terraform:\ \(([^)]+)\):([a-z0-9-]+) ]]; then
+          # Parse terraform: (subscription):region format from comment
+          if [[ $COMMENT =~ terraform:\ \(([^)]+)\):([a-z0-9-]+) ]]; then
             SUBSCRIPTION="${BASH_REMATCH[1]}"
             REGION="${BASH_REMATCH[2]}"
             TERRAFORM_TARGET="${SUBSCRIPTION}-${REGION}"
@@ -59,17 +53,30 @@ jobs:
 
             echo "✅ Parsed terraform target: $TERRAFORM_TARGET"
           else
-            echo "⚠️ No terraform target found in commit message"
+            echo "❌ Invalid format in comment"
             echo "Expected format: terraform: (subscription):region"
             echo "Example: terraform: (prod):us-east-1"
             exit 1
           fi
 
+      - name: Comment Success
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `✅ Terraform target parsed: \`${{ steps.parse.outputs.terraform-target }}\`\n\n🔄 Starting pipeline...`
+            });
+          env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   terraform-plan:
     name: Terraform Plan
     runs-on: ubuntu-latest
     needs: parse-commit
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'issue_comment'
 
     steps:
       - name: Checkout code
