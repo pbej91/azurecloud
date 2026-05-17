@@ -13,7 +13,7 @@ resource "azurerm_resource_group" "main" {
   )
 }
 
-resource "azurerm_storage_account" "example" {
+resource "azurerm_storage_account" "example1" {
   name                     = "st${replace(var.project_name, "-", "")}${var.environment}${replace(var.region, "-", "")}"
   resource_group_name      = azurerm_resource_group.main.name
   location                 = azurerm_resource_group.main.location

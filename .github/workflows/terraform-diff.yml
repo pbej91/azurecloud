@@ -20,15 +20,19 @@ jobs:
   parse-diff-comment:
     name: Parse Diff Comment
     runs-on: ubuntu-latest
-    if: github.event.issue.pull_request && contains(github.event.comment.body, 'terraform: diff:')
+    if: github.event_name == 'issue_comment' && github.event.issue.pull_request != null && contains(github.event.comment.body, 'terraform: diff:')
     outputs:
       target: ${{ steps.parse.outputs.target }}
       subscription: ${{ steps.parse.outputs.subscription }}
       region: ${{ steps.parse.outputs.region }}
 
     steps:
-      - name: Parse Comment
-        id: parse
+      - name: Check Event Type
+        run: |
+          if [[ "${{ github.event_name }}" != "issue_comment" ]]; then
+            echo "❌ This workflow only runs on issue_comment events"
+            exit 0
+          fi
         run: |
           COMMENT="${{ github.event.comment.body }}"
           echo "Comment: $COMMENT"
