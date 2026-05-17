@@ -36,3 +36,13 @@ variable "tags" {
     Managed = "Terraform"
   }
 }
+
+variable "subscription" {
+  description = "Subscription name/identifier (e.g., prod, staging, dev)"
+  type        = string
+}
+
+variable "region" {
+  description = "Azure region (e.g., us-east-1, westeurope)"
+  type        = string
+}
