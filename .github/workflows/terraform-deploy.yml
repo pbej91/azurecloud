@@ -27,8 +27,12 @@ jobs:
       region: ${{ steps.parse.outputs.region }}
 
     steps:
-      - name: Parse Comment
-        id: parse
+      - name: Check Event Type
+        run: |
+          if [[ "${{ github.event_name }}" != "issue_comment" ]]; then
+            echo "❌ This workflow only runs on issue_comment events"
+            exit 0
+          fi
         run: |
           COMMENT="${{ github.event.comment.body }}"
           echo "Comment: $COMMENT"
