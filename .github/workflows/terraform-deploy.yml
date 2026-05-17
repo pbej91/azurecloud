@@ -122,49 +122,45 @@ jobs:
           ARM_USE_OIDC: true
           TF_VAR_environment: ${{ secrets.TERRAFORM_ENV }}
 
-      - name: Convert Plan to JSON
+      - name: Generate Plan Diff Output
         run: |
           cd terraform
-          terraform show -json tfplan > tfplan.json
+          terraform show tfplan > tfplan.txt
 
-      - name: Upload Plan
+      - name: Upload Plan Artifact
         uses: actions/upload-artifact@v4
         with:
           name: tfplan
           path: terraform/tfplan
           retention-days: 5
 
-      - name: Comment PR with Plan Diff
+      - name: Read and Comment Plan Diff
         uses: actions/github-script@v7
         if: always()
         with:
           script: |
             const fs = require('fs');
-            const planOutput = 'terraform/tfplan.json';
+            const planFile = 'terraform/tfplan.txt';
 
             let planContent = '❌ No plan generated';
-            if (fs.existsSync(planOutput)) {
+            if (fs.existsSync(planFile)) {
               try {
-                const planJson = JSON.parse(fs.readFileSync(planOutput, 'utf8'));
-                const changes = planJson.resource_changes || [];
-
-                let summary = `**Terraform Target**: \`${{ needs.parse-commit.outputs.terraform-target }}\`\n\n`;
-                summary += `**Changes Summary**:\n`;
-                summary += `- Create: ${changes.filter(c => c.change.actions.includes('create')).length}\n`;
-                summary += `- Update: ${changes.filter(c => c.change.actions.includes('update')).length}\n`;
-                summary += `- Delete: ${changes.filter(c => c.change.actions.includes('delete')).length}\n`;
-
-                planContent = summary;
+                planContent = fs.readFileSync(planFile, 'utf8');
               } catch (e) {
-                planContent = 'Could not parse plan: ' + e.message;
+                planContent = 'Could not read plan: ' + e.message;
               }
+            }
+
+            const maxLength = 65000;
+            if (planContent.length > maxLength) {
+              planContent = planContent.substring(0, maxLength) + '\n... (truncated)';
             }
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `## 📋 Terraform Plan Diff\n\n${planContent}`
+              body: `## 📋 Terraform Plan Diff\n\n**Target**: \`${{ needs.parse-commit.outputs.terraform-target }}\`\n\n\`\`\`diff\n${planContent}\n\`\`\``
             });
           env:
             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
