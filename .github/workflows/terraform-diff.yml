@@ -1,4 +1,4 @@
-name: Terraform Deploy (Apply)
+name: Terraform Diff (Plan)
 
 on:
   issue_comment:
@@ -17,10 +17,10 @@ permissions:
   pull-requests: write
 
 jobs:
-  parse-deploy-comment:
-    name: Parse Deploy Comment
+  parse-diff-comment:
+    name: Parse Diff Comment
     runs-on: ubuntu-latest
-    if: github.event.issue.pull_request && contains(github.event.comment.body, 'terraform: deploy:')
+    if: github.event.issue.pull_request && contains(github.event.comment.body, 'terraform: diff:')
     outputs:
       target: ${{ steps.parse.outputs.target }}
       subscription: ${{ steps.parse.outputs.subscription }}
@@ -33,8 +33,8 @@ jobs:
           COMMENT="${{ github.event.comment.body }}"
           echo "Comment: $COMMENT"
 
-          # Parse terraform: deploy: subscription.region format
-          if [[ $COMMENT =~ terraform:\ deploy:\ ([a-z0-9.]+) ]]; then
+          # Parse terraform: diff: subscription.region format
+          if [[ $COMMENT =~ terraform:\ diff:\ ([a-z0-9.]+) ]]; then
             TARGET="${BASH_REMATCH[1]}"
             SUBSCRIPTION=$(echo $TARGET | cut -d. -f1)
             REGION=$(echo $TARGET | cut -d. -f2)
@@ -43,15 +43,15 @@ jobs:
             echo "subscription=$SUBSCRIPTION" >> $GITHUB_OUTPUT
             echo "region=$REGION" >> $GITHUB_OUTPUT
 
-            echo "✅ Parsed terraform deploy target: $TARGET"
+            echo "✅ Parsed terraform diff target: $TARGET"
           else
             echo "❌ Invalid format"
-            echo "Expected: terraform: deploy: subscription.region"
-            echo "Example: terraform: deploy: sbx1.eastus"
+            echo "Expected: terraform: diff: subscription.region"
+            echo "Example: terraform: diff: sbx1.eastus"
             exit 1
           fi
 
-      - name: Comment - Deployment Started
+      - name: Comment - Starting Diff
         uses: actions/github-script@v7
         with:
           script: |
@@ -59,13 +59,16 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `🚀 **Terraform Deploy Started**\n\nTarget: \`${{ steps.parse.outputs.target }}\`\n\nRunning \`terraform apply\`...`
+              body: `🔄 **Terraform Diff Started**\n\nTarget: \`${{ steps.parse.outputs.target }}\`\n\nRunning \`terraform plan\`...`
             });
 
-  terraform-apply:
-    name: Terraform Apply
+  terraform-plan:
+    name: Terraform Plan
     runs-on: ubuntu-latest
-    needs: parse-deploy-comment
+    needs: parse-diff-comment
+    environment:
+      name: terraform-approval
+      url: https://github.com/${{ github.repository }}/pull/${{ github.event.issue.number }}
 
     steps:
       - name: Checkout code
@@ -99,25 +102,69 @@ jobs:
         env:
           ARM_USE_OIDC: true
 
+      - name: Terraform Format Check
+        run: |
+          cd terraform
+          terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        run: |
+          cd terraform
+          terraform validate
+
       - name: Terraform Plan
         run: |
           cd terraform
           terraform plan \
-            -var="subscription=${{ needs.parse-deploy-comment.outputs.subscription }}" \
-            -var="region=${{ needs.parse-deploy-comment.outputs.region }}" \
+            -var="subscription=${{ needs.parse-diff-comment.outputs.subscription }}" \
+            -var="region=${{ needs.parse-diff-comment.outputs.region }}" \
             -out=tfplan
         env:
           ARM_USE_OIDC: true
           TF_VAR_environment: ${{ secrets.TERRAFORM_ENV }}
 
-      - name: Terraform Apply
+      - name: Generate Readable Plan
         run: |
           cd terraform
-          terraform apply -auto-approve tfplan
-        env:
-          ARM_USE_OIDC: true
+          terraform show tfplan > tfplan.txt
 
-      - name: Comment - Deployment Complete
+      - name: Upload Plan Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ needs.parse-diff-comment.outputs.target }}
+          path: terraform/tfplan
+          retention-days: 5
+
+      - name: Post Diff Comment
+        uses: actions/github-script@v7
+        if: always()
+        with:
+          script: |
+            const fs = require('fs');
+            const planFile = 'terraform/tfplan.txt';
+
+            let planContent = '❌ No plan generated';
+            if (fs.existsSync(planFile)) {
+              try {
+                planContent = fs.readFileSync(planFile, 'utf8');
+              } catch (e) {
+                planContent = 'Error: ' + e.message;
+              }
+            }
+
+            const maxLength = 65000;
+            if (planContent.length > maxLength) {
+              planContent = planContent.substring(0, maxLength) + '\n... (truncated)';
+            }
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 📋 Terraform Plan Diff\n\n**Target**: \`${{ needs.parse-diff-comment.outputs.target }}\`\n\n\`\`\`\n${planContent}\n\`\`\`\n\n**Next Step**: Review the plan above, then comment with:\n\`terraform: deploy: ${{ needs.parse-diff-comment.outputs.target }}\``
+            });
+
+      - name: Comment - Waiting for Approval
         if: success()
         uses: actions/github-script@v7
         with:
@@ -126,17 +173,5 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `✅ **Terraform Deploy Completed Successfully**\n\nTarget: \`${{ needs.parse-deploy-comment.outputs.target }}\`\n\n🎉 Resources have been deployed!`
-            });
-
-      - name: Comment - Deployment Failed
-        if: failure()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `❌ **Terraform Deploy Failed**\n\nTarget: \`${{ needs.parse-deploy-comment.outputs.target }}\`\n\nPlease check the workflow logs for details.`
+              body: `✅ **Diff Complete - Awaiting Manual Approval**\n\nTo proceed with deployment, manually approve in GitHub environment approval, then trigger deploy with:\n\n\`terraform: deploy: ${{ needs.parse-diff-comment.outputs.target }}\``
             });
