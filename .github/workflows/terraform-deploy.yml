@@ -3,11 +3,6 @@ name: Terraform Deploy to Azure
 on:
   issue_comment:
     types: [created, edited]
-  push:
-    branches:
-      - main
-    paths:
-      - 'terraform/**'
 
 env:
   ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
