@@ -175,7 +175,6 @@ jobs:
   terraform-apply:
     name: Terraform Apply
     runs-on: ubuntu-latest
-    needs: parse-commit
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
@@ -208,31 +207,18 @@ jobs:
         env:
           ARM_USE_OIDC: true
 
-      - name: Terraform Plan Before Apply (Diff)
+      - name: Terraform Plan Before Apply
         run: |
           cd terraform
-          terraform plan \
-            -var="subscription=${{ needs.parse-commit.outputs.subscription }}" \
-            -var="region=${{ needs.parse-commit.outputs.region }}" \
-            -out=tfplan
+          terraform plan
         env:
           ARM_USE_OIDC: true
           TF_VAR_environment: ${{ secrets.TERRAFORM_ENV }}
-
-      - name: Terraform Apply
-        run: |
-          cd terraform
-          terraform apply tfplan
-        env:
-          ARM_USE_OIDC: true
 
       - name: Create Deployment Summary
         run: |
           echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "- **Status**: ✅ Deployment Completed" >> $GITHUB_STEP_SUMMARY
-          echo "- **Terraform Target**: ${{ needs.parse-commit.outputs.terraform-target }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Subscription**: ${{ needs.parse-commit.outputs.subscription }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Region**: ${{ needs.parse-commit.outputs.region }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Timestamp**: $(date -u)" >> $GITHUB_STEP_SUMMARY
           echo "- **Branch**: ${{ github.ref }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
@@ -240,6 +226,7 @@ jobs:
   terraform-test:
     name: Terraform Tests
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     
     steps:
       - name: Checkout code
